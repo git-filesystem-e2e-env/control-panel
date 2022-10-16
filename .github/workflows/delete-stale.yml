@@ -1,0 +1,58 @@
+# Deletes all E2E test run repositories that are more than 1 day old
+
+name: Delete Stale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  delete-stale:
+    name: Delete Stale
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.ACCESS_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            console.log({ owner });
+
+            const query = `query ($owner: String!) {
+              repositoryOwner(login: $owner) {
+                repositories(orderBy: {field: PUSHED_AT, direction: DESC}, first: 100) {
+                  nodes {
+                    name
+                    updatedAt
+                  }
+                }
+              }
+            }`;
+
+            const variables = { owner };
+
+            const result = await github.graphql(query, variables);
+            console.log({ result: JSON.stringify(result, null, 2) });
+
+            const oneDayAgo = new Date(Date.now() - ( 3600 * 1000 * 24));
+            console.log({ oneDayAgo });
+
+            for (const repository of result.repositoryOwner.repositories.nodes) {
+              const { name, updatedAt } = repository;
+              console.log("Checking", { name, updatedAt });
+              
+              if (!name.startsWith("e2e-test")) {
+                console.log("Skipping " + name + " because it does not begin with \"e2e-test\"");
+                continue;
+              }              
+            
+              if (new Date(updatedAt) > oneDayAgo) {
+                console.log("Skipping " + name + " because it is not older than " + oneDayAgo);
+                continue;
+              }
+              
+              console.log("Deleting " + name);
+              await github.rest.repos.delete({ owner, repo: name });
+              console.log("Deleted" + name);
+            }
